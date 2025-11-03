@@ -1,109 +1,207 @@
 // ==UserScript==
-// @name         Orçamento e Rodapé Aleatório Compacto
+// @name         Data e Hora Automáticos V11 FAT
 // @namespace    http://tampermonkey.net/
+// @version      11.0
+// @description  Script para alterar data e hora automáticamente em determinados sites.
 // @author       Jhon | GPT
-// @version      1.0
-// @description  Datas aleatórias entre início e fim com horas aleatórias e rodapé atualizado
-// @match        
+// @match        *://*/*
 // @grant        GM_addStyle
 // ==/UserScript==
 
-(function(){
+(function() {
     'use strict';
-    
-    const STORAGE_START='orcamentoDateStart', STORAGE_END='orcamentoDateEnd';
-    let orcBase='1026.1';
 
-    // -------------------- CSS --------------------
-    GM_addStyle(`#dateRangeModal{position:fixed;top:0;left:0;width:100%;height:100%;display:none;justify-content:center;align-items:center;background:rgba(0,0,0,0.5);z-index:10000;}
-    #modalContent{background:#fff;padding:25px;border-radius:8px;width:90%;max-width:400px;}
-    #modalButtons button{padding:10px 15px;border:none;border-radius:4px;cursor:pointer;}
-    #openDatePickerButton{position:fixed;bottom:20px;right:20px;width:50px;height:50px;border-radius:50%;background:#1797F5;color:#fff;cursor:pointer;z-index:9999;}`);
+    const STORAGE_KEY_START = 'orcamentoDateOnlyStartRandom';
+    const STORAGE_KEY_END = 'orcamentoDateOnlyEndRandom';
+    let orcamentoBase = '1026.1';
 
-    // -------------------- HTML --------------------
-    const modalHTML=`<div id="dateRangeModal">
-        <div id="modalContent">
-            <h3>Intervalo de Datas</h3>
-            <p>Hora aleatória (08:00-18:00) e rodapé 1-5h depois</p>
-            <div><label>Data Início:</label><input type="date" id="modalDataInicio"></div>
-            <div><label>Data Fim:</label><input type="date" id="modalDataFim"></div>
-            <div id="modalButtons">
-                <button id="aplicarData">Aplicar</button>
-                <button id="fecharModal">Cancelar</button>
+    // ================== ESTILO ==================
+    GM_addStyle(`
+        #dateRangeModal {
+            position: fixed; top:0; left:0; width:100%; height:100%;
+            background-color: rgba(0,0,0,0.5);
+            display:none; justify-content:center; align-items:center; z-index:10000;
+        }
+        #modalContent {
+            background-color: #fff; padding:25px; border-radius:8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2); width:90%; max-width:400px;
+        }
+        #modalContent h3 { margin-top:0; color:#3c4350; border-bottom:1px solid #ddd; padding-bottom:10px; margin-bottom:15px; }
+        .form-row { margin-bottom:15px; }
+        .form-row label { display:block; margin-bottom:5px; font-weight:bold; color:#596270; }
+        .form-row input[type="date"] { width:100%; padding:8px; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; }
+        #modalButtons { display:flex; justify-content:space-between; margin-top:20px; }
+        #modalButtons button { padding:10px 15px; border:none; border-radius:4px; cursor:pointer; font-weight:bold; }
+        #aplicarData { background-color:#49C758; color:white; }
+        #fecharModal { background-color:#E55352; color:white; }
+        #openDatePickerButton { position:fixed; bottom:20px; right:20px; background-color:#1797F5; color:white; padding:15px;
+            border-radius:50%; border:none; box-shadow:0 4px 8px rgba(0,0,0,0.2); cursor:pointer; font-size:14px; font-weight:bold;
+            z-index:9999; width:50px; height:50px; text-align:center; line-height:20px; transition: background-color 0.3s;
+        }
+        #openDatePickerButton:hover { background-color:#0056b3; }
+        #horarioFixo { font-size:0.9em; color:#777; margin-top:5px; }
+    `);
+
+    function injectModalHTML() {
+        const modalHTML = `
+            <div id="dateRangeModal">
+                <div id="modalContent">
+                    <h3>Selecionar Intervalo de Datas</h3>
+                    <p id="horarioFixo">Horário do orçamento: aleatório entre 08:00 e 18:00. Rodapé: 1-5h depois.</p>
+                    <div class="form-row">
+                        <label for="modalDataInicio">Data de Início:</label>
+                        <input type="date" id="modalDataInicio" required>
+                    </div>
+                    <div class="form-row">
+                        <label for="modalDataFim">Data de Fim:</label>
+                        <input type="date" id="modalDataFim" required>
+                    </div>
+                    <div id="modalButtons">
+                        <button id="aplicarData">Aplicar ao Orçamento</button>
+                        <button id="fecharModal">Cancelar</button>
+                    </div>
+                    <p id="modalFeedback" style="color:red; margin-top:10px;"></p>
+                </div>
             </div>
-            <p id="modalFeedback" style="color:red;"></p>
-        </div>
-    </div>
-    <button id="openDatePickerButton">🗓️</button>`;
-    document.body.insertAdjacentHTML('beforeend',modalHTML);
-
-    // -------------------- Funções --------------------
-    const pad=n=>String(n).padStart(2,'0');
-    const formatDate=d=>`${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
-    const formatTime=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-
-    function randomTime(minH=0,maxH=23){return [Math.floor(Math.random()*(maxH-minH+1))+minH,Math.floor(Math.random()*60),Math.floor(Math.random()*60)];}
-    function randomDate(start,end){
-        const s=start.getTime(), e=end.getTime();
-        return new Date(s + Math.random()*(e-s));
+            <button id="openDatePickerButton" title="Abrir Seleção de Data">🗓️</button>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
     }
 
-    function findOrc(){const b=document.querySelectorAll('b.not-select.nowrap');for(let i of b) if(i.textContent.trim()==='Orçamento') return i.closest('.form-group')?.querySelector('p.nowrap'); return null;}
-    function updateOrcBase(el){if(el){const m=el.textContent.trim().match(/^([\d\.]+) -/); if(m) orcBase=m[1];}}
+    // ================== FUNÇÕES AUXILIARES ==================
+    function generateRandomTimeStr(minH, maxH){
+        let hour = Math.floor(Math.random() * (maxH - minH + 1)) + minH;
+        let minute = Math.floor(Math.random() * 60);
+        let second = Math.floor(Math.random() * 60);
+        return `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:${String(second).padStart(2,'0')}`;
+    }
 
-    function applyDates(){
-        const sStr=document.getElementById('modalDataInicio').value;
-        const eStr=document.getElementById('modalDataFim').value;
-        if(!sStr||!eStr){document.getElementById('modalFeedback').textContent='Preencha as datas!';return;}
+    function findOrcamentoElement(){
+        const labelsB = document.querySelectorAll('b.not-select.nowrap');
+        let labelOrcamento = null;
+        labelsB.forEach(b=>{
+            if(b.textContent && b.textContent.trim()==='Orçamento'){
+                labelOrcamento = b;
+            }
+        });
+        if(labelOrcamento){
+            const formGroupDiv = labelOrcamento.closest('.form-group');
+            if(formGroupDiv) return formGroupDiv.querySelector('p.nowrap');
+        }
+        return null;
+    }
 
-        let sDate=new Date(sStr), eDate=new Date(eStr);
-        sDate.setHours(...randomTime(8,18));
-        // Garante eDate após sDate com 1-5h
-        let addH=Math.floor(Math.random()*5)+1, [m,s]=randomTime(0,59);
-        eDate=new Date(sDate.getTime()+addH*3600000 + m*60000 + s*1000);
+    function updateOrcamentoBase(el){
+        if(el){
+            const text = el.textContent.trim();
+            const match = text.match(/^([\d\.]+) -/);
+            if(match) orcamentoBase = match[1];
+        }
+    }
 
-        localStorage.setItem(STORAGE_START,sStr);
-        localStorage.setItem(STORAGE_END,eStr);
+    function formatarData(date){
+        const dia = String(date.getDate()).padStart(2,'0');
+        const mes = String(date.getMonth()+1).padStart(2,'0');
+        const ano = String(date.getFullYear());
+        return `${dia}/${mes}/${ano}`;
+    }
 
-        const orcEl=findOrc();
-        if(orcEl){updateOrcBase(orcEl);orcEl.textContent=`${orcBase} - ${formatDate(sDate)} - ${formatTime(sDate)}`;}
+    function formatarHora(date){
+        return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}:${String(date.getSeconds()).padStart(2,'0')}`;
+    }
 
-        // Atualiza footer
-        const foot=document.querySelector('footer b');
-        if(foot) foot.textContent=`Status do Orçamento: Iniciado | Relatório gerado em ${formatDate(eDate)} - ${formatTime(eDate)} pelo Sistema  • `;
+    // ================== APLICAÇÃO ==================
+    function applySavedData(startStr,endStr){
+        if(!startStr || !endStr) return;
+        const orcEl = findOrcamentoElement();
+        if(!orcEl) return;
+        updateOrcamentoBase(orcEl);
 
-        closeModal();
+        // DATA ALEATÓRIA ENTRE INÍCIO E FIM
+        const startDate = new Date(startStr);
+        const endDate = new Date(endStr);
+        const randomTime = startDate.getTime() + Math.random()*(endDate.getTime()-startDate.getTime());
+        const randomDate = new Date(randomTime);
+
+        // HORA ALEATÓRIA DO ORÇAMENTO 08:00-18:00
+        const randomHourStr = generateRandomTimeStr(8,18);
+        const [h,m,s] = randomHourStr.split(':').map(Number);
+        randomDate.setHours(h,m,s);
+
+        const dataFmt = formatarData(randomDate);
+        const novoValor = `${orcamentoBase} - ${dataFmt} - ${randomHourStr}`;
+        orcEl.textContent = novoValor;
+
+        // ATUALIZA RODAPÉ
+        updateFooter(randomDate);
+        console.log(`Tampermonkey: Orçamento atualizado para ${novoValor}`);
+    }
+
+    function updateFooter(baseDate){
+        const footerB = document.querySelector('footer b');
+        if(!footerB) return;
+
+        const newDate = new Date(baseDate.getTime());
+        // adiciona aleatoriamente 1 a 5 horas
+        const addHours = Math.floor(Math.random()*5)+1;
+        const addMinutes = Math.floor(Math.random()*60);
+        const addSeconds = Math.floor(Math.random()*60);
+        newDate.setHours(newDate.getHours()+addHours,newDate.getMinutes()+addMinutes,newDate.getSeconds()+addSeconds);
+
+        const formatted = formatarData(newDate)+' - '+formatarHora(newDate);
+        footerB.innerHTML = footerB.innerHTML.replace(/Relatório gerado em .*? pelo/, `Relatório gerado em ${formatted} pelo`);
     }
 
     function openModal(){
-        document.getElementById('dateRangeModal').style.display='flex';
-        const s=document.getElementById('modalDataInicio'), e=document.getElementById('modalDataFim');
-        s.value=localStorage.getItem(STORAGE_START) || new Date().toISOString().split('T')[0];
-        e.value=localStorage.getItem(STORAGE_END) || new Date(new Date().setDate(new Date().getDate()+24)).toISOString().split('T')[0];
-        document.getElementById('modalFeedback').textContent='';
-    }
-    function closeModal(){document.getElementById('dateRangeModal').style.display='none';}
+        const modal = document.getElementById('dateRangeModal');
+        const startInput = document.getElementById('modalDataInicio');
+        const endInput = document.getElementById('modalDataFim');
+        modal.style.display = 'flex';
+        document.getElementById('modalFeedback').textContent = '';
 
-    // -------------------- Listeners --------------------
-    document.getElementById('openDatePickerButton').addEventListener('click',openModal);
-    document.getElementById('fecharModal').addEventListener('click',closeModal);
-    document.getElementById('aplicarData').addEventListener('click',applyDates);
-    document.getElementById('dateRangeModal').addEventListener('click',e=>{if(e.target===document.getElementById('dateRangeModal')) closeModal();});
-
-    // -------------------- Inicialização --------------------
-    window.addEventListener('load',()=>{
-        const savedEnd=localStorage.getItem(STORAGE_END);
-        if(savedEnd){
-            // Aplica uma hora aleatória na inicialização
-            const sDate=new Date(localStorage.getItem(STORAGE_START));
-            sDate.setHours(...randomTime(8,18));
-            const foot=document.querySelector('footer b');
-            if(foot){
-                let addH=Math.floor(Math.random()*5)+1,[m,s]=randomTime(0,59);
-                let eDate=new Date(sDate.getTime()+addH*3600000+m*60000+s*1000);
-                foot.textContent=`Status do Orçamento: Iniciado | Relatório gerado em ${formatDate(eDate)} - ${formatTime(eDate)} pelo Sistema  • `;
-            }
+        const savedStart = localStorage.getItem(STORAGE_KEY_START);
+        const savedEnd = localStorage.getItem(STORAGE_KEY_END);
+        updateOrcamentoBase(findOrcamentoElement());
+        if(savedStart && savedEnd){
+            startInput.value = savedStart;
+            endInput.value = savedEnd;
+        } else {
+            const today = new Date();
+            startInput.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+            const endD = new Date();
+            endD.setDate(endD.getDate()+24);
+            endInput.value = `${endD.getFullYear()}-${String(endD.getMonth()+1).padStart(2,'0')}-${String(endD.getDate()).padStart(2,'0')}`;
         }
-    });
+    }
 
-})();
+    function closeModal(){ document.getElementById('dateRangeModal').style.display='none'; }
+
+    function applyDataToOrcamento(){
+        const startInput = document.getElementById('modalDataInicio');
+        const endInput = document.getElementById('modalDataFim');
+        const feedback = document.getElementById('modalFeedback');
+
+        const startStr = startInput.value;
+        const endStr = endInput.value;
+        if(!startStr || !endStr){ feedback.textContent='⚠️ Preencha as duas datas.'; return; }
+
+        const startDate = new Date(startStr);
+        const endDate = new Date(endStr);
+        if(startDate.getTime()>=endDate.getTime()){
+            feedback.textContent=`❌ Erro: Data de Início (${startStr}) não pode ser depois da Data de Fim (${endStr}).`;
+            return;
+        }
+
+        localStorage.setItem(STORAGE_KEY_START,startStr);
+        localStorage.setItem(STORAGE_KEY_END,endStr);
+        applySavedData(startStr,endStr);
+        feedback.textContent='✅ Aplicado e salvo com sucesso!';
+        setTimeout(closeModal,800);
+    }
+
+    // ================== INICIALIZAÇÃO ==================
+    function setupListeners(){
+        const modal = document.getElementById('dateRangeModal');
+        document.getElementById('openDatePickerButton').addEventListener('click',openModal);
+        document.getElementById('fecharModal').addEventListener('click',closeModal);
+        document.getElementById('aplicarData').addEventListener('click',applyDataToOrcamento
